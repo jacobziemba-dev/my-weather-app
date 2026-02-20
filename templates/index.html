@@ -192,6 +192,38 @@
       color: #7eb8f7;
       margin-top: 10px;
     }
+
+    .unit-toggle {
+      display: flex;
+      gap: 0;
+      margin-bottom: 16px;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+
+    .unit-btn {
+      flex: 1;
+      padding: 8px 20px;
+      border-radius: 0;
+      border: none;
+      background: #1a1a2e;
+      color: #888;
+      font-weight: bold;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .unit-btn.active {
+      background: #7eb8f7;
+      color: #0f0f1a;
+    }
+
+    .unit-btn:hover:not(.active) {
+      background: #2a2a4e;
+      color: #7eb8f7;
+    }
   </style>
 </head>
 
@@ -206,6 +238,10 @@
     <button id="locate-btn" onclick="locateMe()" title="Use my location">
       📍
     </button>
+  </div>
+  <div class="unit-toggle">
+    <button class="unit-btn active" id="btn-c" onclick="setUnit('C')">°C</button>
+    <button class="unit-btn" id="btn-f" onclick="setUnit('F')">°F</button>
   </div>
   <p id="status" class="loading"></p>
   <div class="card" id="weather-card">
@@ -246,6 +282,27 @@
 
   <script>
     let debounceTimer = null;
+    let currentWeatherData = null;
+    let currentUnit = 'C';
+
+    // ── Unit conversion ───────────────────────────────────────────
+
+    function toF(c) {
+      return Math.round(c * 9 / 5 + 32);
+    }
+
+    function toMph(kmh) {
+      return Math.round(kmh * 0.621371);
+    }
+
+    function setUnit(unit) {
+      currentUnit = unit;
+      document.getElementById("btn-c").classList.toggle("active", unit === 'C');
+      document.getElementById("btn-f").classList.toggle("active", unit === 'F');
+      if (currentWeatherData) {
+        renderWeather(currentWeatherData);
+      }
+    }
 
     // ── City suggestions ──────────────────────────────────────────
 
@@ -301,6 +358,34 @@
 
     document.getElementById("city-input").addEventListener("blur", hideSuggestions);
 
+    // ── Weather render ────────────────────────────────────────────
+
+    function renderWeather(data) {
+      const isFahrenheit = currentUnit === 'F';
+      const temp = isFahrenheit ? toF(data.temp) : data.temp;
+      const feelsLike = isFahrenheit ? toF(data.feels_like) : data.feels_like;
+      const tempMax = isFahrenheit ? toF(data.temp_max) : data.temp_max;
+      const tempMin = isFahrenheit ? toF(data.temp_min) : data.temp_min;
+      const unit = isFahrenheit ? '°F' : '°C';
+      const wind = isFahrenheit ? `${toMph(data.wind)} mph` : `${data.wind} km/h`;
+
+      document.getElementById("city-name").textContent = data.city;
+      document.getElementById("country").textContent = data.country;
+      document.getElementById("temp").textContent = `${temp}${unit}`;
+      document.getElementById("feels-like").textContent = `${feelsLike}${unit}`;
+      document.getElementById("humidity").textContent = `${data.humidity}%`;
+      document.getElementById("wind").textContent = wind;
+      document.getElementById("description").textContent = data.description;
+      document.getElementById("weather-icon").src =
+        `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
+      document.getElementById("temp-range").textContent =
+        `${tempMax}° / ${tempMin}°`;
+      document.getElementById("pressure").textContent = `${data.pressure} hPa`;
+      document.getElementById("visibility").textContent =
+        data.visibility != null ? `${data.visibility} km` : "—";
+      document.getElementById("weather-card").classList.add("visible");
+    }
+
     // ── Weather fetch ─────────────────────────────────────────────
 
     async function fetchWeather(params) {
@@ -319,21 +404,8 @@
           return;
         }
         status.textContent = "";
-        document.getElementById("city-name").textContent = data.city;
-        document.getElementById("country").textContent = data.country;
-        document.getElementById("temp").textContent = `${data.temp}°C`;
-        document.getElementById("feels-like").textContent = `${data.feels_like}°C`;
-        document.getElementById("humidity").textContent = `${data.humidity}%`;
-        document.getElementById("wind").textContent = `${data.wind} km/h`;
-        document.getElementById("description").textContent = data.description;
-        document.getElementById("weather-icon").src =
-          `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
-        document.getElementById("temp-range").textContent =
-          `${data.temp_max}° / ${data.temp_min}°`;
-        document.getElementById("pressure").textContent = `${data.pressure} hPa`;
-        document.getElementById("visibility").textContent =
-          data.visibility != null ? `${data.visibility} km` : "—";
-        document.getElementById("weather-card").classList.add("visible");
+        currentWeatherData = data;
+        renderWeather(data);
       } catch {
         status.textContent = "Network error. Please try again.";
         status.className = "error";
@@ -371,7 +443,7 @@
           status.className = "error";
           document.getElementById("city-input").focus();
         },
-        { timeout: 10000 },
+        { enableHighAccuracy: true, timeout: 10000 },
       );
     }
 

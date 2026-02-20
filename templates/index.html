@@ -84,8 +84,7 @@
       border-bottom: none;
     }
 
-    .suggestion-item:hover,
-    .suggestion-item.active {
+    .suggestion-item:hover {
       background: #2a2a4e;
       color: #7eb8f7;
     }
@@ -247,7 +246,6 @@
 
   <script>
     let debounceTimer = null;
-    let activeIndex = -1;
 
     // ── City suggestions ──────────────────────────────────────────
 
@@ -264,7 +262,6 @@
     function renderSuggestions(cities) {
       const box = document.getElementById("suggestions");
       box.innerHTML = "";
-      activeIndex = -1;
       if (!cities.length) {
         box.style.display = "none";
         return;
@@ -290,7 +287,6 @@
     function hideSuggestions() {
       const box = document.getElementById("suggestions");
       box.style.display = "none";
-      activeIndex = -1;
     }
 
     document.getElementById("city-input").addEventListener("input", function () {
@@ -304,28 +300,6 @@
     });
 
     document.getElementById("city-input").addEventListener("blur", hideSuggestions);
-
-    // Keyboard navigation inside suggestions
-    document.getElementById("city-input").addEventListener("keydown", (e) => {
-      const items = document.querySelectorAll(".suggestion-item");
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        activeIndex = Math.min(activeIndex + 1, items.length - 1);
-        items.forEach((el, i) => el.classList.toggle("active", i === activeIndex));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        activeIndex = Math.max(activeIndex - 1, -1);
-        items.forEach((el, i) => el.classList.toggle("active", i === activeIndex));
-      } else if (e.key === "Enter") {
-        if (activeIndex >= 0 && items[activeIndex]) {
-          items[activeIndex].dispatchEvent(new MouseEvent("mousedown"));
-        } else {
-          searchWeather();
-        }
-      } else if (e.key === "Escape") {
-        hideSuggestions();
-      }
-    });
 
     // ── Weather fetch ─────────────────────────────────────────────
 

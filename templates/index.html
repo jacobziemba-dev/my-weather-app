@@ -38,8 +38,13 @@
       max-width: 420px;
     }
 
-    input {
+    .search-wrapper {
+      position: relative;
       flex: 1;
+    }
+
+    input {
+      width: 100%;
       padding: 12px 16px;
       border-radius: 10px;
       border: 1px solid #333;
@@ -51,6 +56,38 @@
 
     input:focus {
       border-color: #7eb8f7;
+    }
+
+    #suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #1a1a2e;
+      border: 1px solid #333;
+      border-radius: 10px;
+      overflow: hidden;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .suggestion-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: #ccc;
+      border-bottom: 1px solid #2a2a40;
+    }
+
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.active {
+      background: #2a2a4e;
+      color: #7eb8f7;
     }
 
     button {
@@ -162,7 +199,10 @@
 <body>
   <h1>🌤 Weather</h1>
   <div class="search-box">
-    <input type="text" id="city-input" placeholder="Enter city name..." />
+    <div class="search-wrapper">
+      <input type="text" id="city-input" placeholder="Enter city name..." autocomplete="off" />
+      <div id="suggestions"></div>
+    </div>
     <button onclick="searchWeather()">Search</button>
     <button id="locate-btn" onclick="locateMe()" title="Use my location">
       📍
@@ -189,48 +229,163 @@
         <div class="detail-value" id="wind"></div>
       </div>
     </div>
+    <div class="details">
+      <div class="detail-item">
+        <div class="detail-label">High / Low</div>
+        <div class="detail-value" id="temp-range"></div>
+      </div>
+      <div class="detail-item">
+        <div class="detail-label">Pressure</div>
+        <div class="detail-value" id="pressure"></div>
+      </div>
+      <div class="detail-item">
+        <div class="detail-label">Visibility</div>
+        <div class="detail-value" id="visibility"></div>
+      </div>
+    </div>
   </div>
 
   <script>
+    let debounceTimer = null;
+    let activeIndex = -1;
+
+    // ── City suggestions ──────────────────────────────────────────
+
+    async function fetchSuggestions(q) {
+      try {
+        const res = await fetch(`/cities?q=${encodeURIComponent(q)}`);
+        const cities = await res.json();
+        renderSuggestions(cities);
+      } catch {
+        hideSuggestions();
+      }
+    }
+
+    function renderSuggestions(cities) {
+      const box = document.getElementById("suggestions");
+      box.innerHTML = "";
+      activeIndex = -1;
+      if (!cities.length) {
+        box.style.display = "none";
+        return;
+      }
+      cities.forEach((city) => {
+        const item = document.createElement("div");
+        item.className = "suggestion-item";
+        let label = city.name;
+        if (city.state) label += `, ${city.state}`;
+        if (city.country) label += `, ${city.country}`;
+        item.textContent = label;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault(); // prevent input blur before mousedown fires
+          document.getElementById("city-input").value = label;
+          hideSuggestions();
+          fetchWeather({ lat: city.lat, lon: city.lon });
+        });
+        box.appendChild(item);
+      });
+      box.style.display = "block";
+    }
+
+    function hideSuggestions() {
+      const box = document.getElementById("suggestions");
+      box.style.display = "none";
+      activeIndex = -1;
+    }
+
+    document.getElementById("city-input").addEventListener("input", function () {
+      const val = this.value.trim();
+      clearTimeout(debounceTimer);
+      if (val.length < 2) {
+        hideSuggestions();
+        return;
+      }
+      debounceTimer = setTimeout(() => fetchSuggestions(val), 300);
+    });
+
+    document.getElementById("city-input").addEventListener("blur", hideSuggestions);
+
+    // Keyboard navigation inside suggestions
+    document.getElementById("city-input").addEventListener("keydown", (e) => {
+      const items = document.querySelectorAll(".suggestion-item");
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        activeIndex = Math.min(activeIndex + 1, items.length - 1);
+        items.forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        activeIndex = Math.max(activeIndex - 1, -1);
+        items.forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+      } else if (e.key === "Enter") {
+        if (activeIndex >= 0 && items[activeIndex]) {
+          items[activeIndex].dispatchEvent(new MouseEvent("mousedown"));
+        } else {
+          searchWeather();
+        }
+      } else if (e.key === "Escape") {
+        hideSuggestions();
+      }
+    });
+
+    // ── Weather fetch ─────────────────────────────────────────────
+
     async function fetchWeather(params) {
       const status = document.getElementById("status");
       status.textContent = "Loading...";
       status.className = "loading";
-      const query = new URLSearchParams(params).toString();
-      const res = await fetch(`/weather?${query}`);
-      const data = await res.json();
-      if (data.error) {
-        status.textContent = data.error;
+      hideSuggestions();
+      try {
+        const query = new URLSearchParams(params).toString();
+        const res = await fetch(`/weather?${query}`);
+        const data = await res.json();
+        if (data.error) {
+          status.textContent = data.error;
+          status.className = "error";
+          document.getElementById("weather-card").classList.remove("visible");
+          return;
+        }
+        status.textContent = "";
+        document.getElementById("city-name").textContent = data.city;
+        document.getElementById("country").textContent = data.country;
+        document.getElementById("temp").textContent = `${data.temp}°C`;
+        document.getElementById("feels-like").textContent = `${data.feels_like}°C`;
+        document.getElementById("humidity").textContent = `${data.humidity}%`;
+        document.getElementById("wind").textContent = `${data.wind} km/h`;
+        document.getElementById("description").textContent = data.description;
+        document.getElementById("weather-icon").src =
+          `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
+        document.getElementById("temp-range").textContent =
+          `${data.temp_max}° / ${data.temp_min}°`;
+        document.getElementById("pressure").textContent = `${data.pressure} hPa`;
+        document.getElementById("visibility").textContent =
+          data.visibility != null ? `${data.visibility} km` : "—";
+        document.getElementById("weather-card").classList.add("visible");
+      } catch {
+        status.textContent = "Network error. Please try again.";
         status.className = "error";
         document.getElementById("weather-card").classList.remove("visible");
-        return;
       }
-      status.textContent = "";
-      document.getElementById("city-name").textContent = data.city;
-      document.getElementById("country").textContent = data.country;
-      document.getElementById("temp").textContent = `${data.temp}°C`;
-      document.getElementById("feels-like").textContent =
-        `${data.feels_like}°C`;
-      document.getElementById("humidity").textContent = `${data.humidity}%`;
-      document.getElementById("wind").textContent = `${data.wind} km/h`;
-      document.getElementById("description").textContent = data.description;
-      document.getElementById("weather-icon").src =
-        `https://openweathermap.org/img/wn/${data.icon}@2x.png`;
-      document.getElementById("weather-card").classList.add("visible");
     }
 
     function searchWeather() {
       const city = document.getElementById("city-input").value.trim();
       if (!city) return;
+      hideSuggestions();
       fetchWeather({ city });
     }
 
+    // ── Geolocation ───────────────────────────────────────────────
+
     function locateMe() {
+      const status = document.getElementById("status");
       if (!navigator.geolocation) {
-        document.getElementById("status").textContent =
-          "Geolocation not supported.";
+        status.textContent = "Geolocation not supported. Search for a city above.";
+        status.className = "error";
+        document.getElementById("city-input").focus();
         return;
       }
+      status.textContent = "Detecting your location…";
+      status.className = "loading";
       navigator.geolocation.getCurrentPosition(
         (pos) =>
           fetchWeather({
@@ -238,15 +393,13 @@
             lon: pos.coords.longitude,
           }),
         () => {
-          document.getElementById("status").textContent =
-            "Location access denied.";
+          status.textContent = "Location access denied. Search for a city above.";
+          status.className = "error";
+          document.getElementById("city-input").focus();
         },
+        { timeout: 10000 },
       );
     }
-
-    document.getElementById("city-input").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") searchWeather();
-    });
 
     locateMe();
   </script>
